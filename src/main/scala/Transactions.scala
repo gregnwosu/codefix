@@ -6,14 +6,34 @@ import org.apache.spark.sql.functions.{collect_list, concat_ws, col}
 import org.apache.spark.mllib.fpm.FPGrowth
 //Load data from HDFS
 
-case class Transactions(
+case class Transaction(
   Transaction_ID: String, Dept: String,
   Category: String, Company: String,
   Brand: String, Product_Size: String,
   Product_Measure: String, Purchase_Quantity: String,
   Purchase_Amount: String)
 
+object Transaction {
+    def apply(line: String):Transaction = {
+      val split = line.split(',')
+      Transaction(
+        split(0),
+        split(1),
+        split(2),
+      split(3),
+      split(4),
+      split(5),
+      split(6),
+      split(7),
+      split(8)
+    )
+  }
+}
+
+
 object Main extends App {
+  override def main(args: Array[String]) = {
+    println (" Running app")
   val logFile = "YOUR_SPARK_HOME/README.md" // Should be some file on your system
   val conf = {
     val env = Seq(("spark.files.overwrite" ,  "true"))
@@ -29,67 +49,41 @@ object Main extends App {
     conf_.set( "spark.yarn.executor.memoryOverhead", "3069")
     conf_.setExecutorEnv(env)
   }
-  val sc = new SparkContext(conf)
-  val data = sc.textFile("data/*")
-  val sqlContext = new org.apache.spark.sql.SQLContext(sc)
-  import sqlContext.implicits._
+
+  val sc_ = new SparkContext(conf)
+  val sc = new org.apache.spark.sql.SQLContext(sc_)
+  val data = sc_.textFile("src/main/resources/data/*")
+  import sc.implicits._
   //Create data schema
 
-  def csvToMyClass(line: String) = {
-    val split = line.split(',')
-    Transactions(
-      split(0),
-      split(1),
-      split(2),
-      split(3),
-      split(4),
-      split(5),
-      split(6),
-      split(7),
-      split(8)
-    )
-  }
+  val transCatDataset = data
+    .map(Transaction.apply)
+    .toDF(
+      "Transaction_ID", "Dept", "Category", "Company",
+      "Brand", "Product_Size","Product_Measure",
+      "Purchase_Quantity", "Purchase_Amount")
+    .select("Transaction_ID", "Category").distinct
 
-  val df = data.map(csvToMyClass).toDF(
-    "Transaction_ID", "Dept",
-    "Category", "Company",
-    "Brand", "Product_Size",
-    "Product_Measure", "Purchase_Quantity", "Purchase_Amount")
-    .select("Transaction_ID", "Category").distinct()
-
-  df.show
+//  transCatDataset.show
 
   //Get only categories fields to analyze the relationships between them
-  val transactions =
-    df.groupBy(collect_list("Transaction_ID"))
+  val transGrpAggCategoryConcatString =
+    transCatDataset
+      .groupBy(collect_list("Transaction_ID"))
       .agg(collect_list(col("Category")) as "Category")
       .withColumn("Category", concat_ws(",", col("Category")))
-      .select("Category")
-      .rdd.saveAsTextFile("/user/cloudera/Groups_CategoriesASD")
+      .select("Category").distinct
 
-  //Remove
-  val input = sc
-    .textFile("/user/cloudera/Groups_Categories")
-    .flatMap { line => line.split("\n") }
-    .distinct()
-  input
-    .map { vertex =>
-      vertex
-        .replace("[", "")
-        .replace("]", "")
-    }
-    .saveAsTextFile("/user/cloudera/Groups")
+  val flattenedCategories =transGrpAggCategoryConcatString
+    .map(_.toString.replace("[", "").replace("]", "")
+    )
 
-  val input2 = sc.textFile("/user/cloudera/Groups")
-  val raw = input2.map(_.split(","))
-  val twoElementArrays = raw.flatMap(_.combinations(2))
-  val result = twoElementArrays ++ raw.filter(_.length == 1)
-  result.map(_.mkString(","))
-    .saveAsTextFile("/user/cloudera/Output/Combinations_Output")
-   val data2 = sc
-    .textFile("/user/cloudera/Output/Combinations_Output")
 
-  val transactions2: RDD[Array[String]] = data.map(s => s.trim.split(','))
+  val twoElementArrays = flattenedCategories.flatMap(_.combinations(2))
+  val result_ = twoElementArrays.union(flattenedCategories.filter (_.length == 1))
+  val result = result_.map(_.mkString(","))
+
+  val transactions2: RDD[Array[String]] = data.map(_.trim.split(','))
 
   val fpg = new FPGrowth()
     .setMinSupport(0.2)
@@ -107,5 +101,8 @@ object Main extends App {
         + " => " + rule.consequent.mkString("[", ",", "]")
         + ", " + rule.confidence
     )
+  }
+
+
   }
 }
