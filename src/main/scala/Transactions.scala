@@ -25,8 +25,7 @@ object Transaction {
       split(5),
       split(6),
       split(7),
-      split(8),
-      split(9)
+      split(8)
     )
   }
 }
