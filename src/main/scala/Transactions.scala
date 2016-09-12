@@ -52,7 +52,7 @@ object Main extends App {
 
   val sc_ = new SparkContext(conf)
   val sc = new org.apache.spark.sql.SQLContext(sc_)
-  val data = sc_.textFile("src/main/resources/data/*")
+  val data = sc_.textFile(args(0))
   import sc.implicits._
   //Create data schema
 
